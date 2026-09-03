@@ -5,7 +5,7 @@ import type { TokenClient, TokenResponse } from "@/types/gis";
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
-export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
@@ -18,14 +18,14 @@ const SCOPES = [
  * browser OAuth flow, so without this every reload would need a fresh popup.
  * sessionStorage (not localStorage) so it dies with the tab.
  */
-const STORAGE_KEY = "drive-browser.token";
+const STORAGE_KEY = "expense-tracker.token";
 
 type StoredToken = { accessToken: string; expiresAt: number };
 
-type User = { name?: string; email?: string; picture?: string };
+type User = { sub?: string; name?: string; email?: string; picture?: string };
 
 type AuthContextValue = {
-  status: "loading" | "signed-out" | "signed-in";
+  status: "signed-out" | "signed-in";
   accessToken: string | null;
   user: User | null;
   error: string | null;
@@ -45,7 +45,13 @@ export function useGoogleAuth() {
 
 let gisLoader: Promise<void> | null = null;
 
-/** Injects the GIS script once and resolves when it is ready. */
+/**
+ * Injects the Google Identity Services script, once, on demand.
+ *
+ * Deliberately not called at startup: the app is offline-first and most
+ * sessions never touch Google at all, so it would be a pointless network
+ * request that fails offline.
+ */
 function loadGis() {
   if (gisLoader) return gisLoader;
   gisLoader = new Promise<void>((resolve, reject) => {
@@ -54,8 +60,11 @@ function loadGis() {
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Could not load Google sign-in."));
+    script.onerror = () => reject(new Error("Could not reach Google to sign in."));
     document.head.appendChild(script);
+  }).catch((error) => {
+    gisLoader = null; // Allow a retry rather than caching the failure.
+    throw error;
   });
   return gisLoader;
 }
@@ -86,12 +95,10 @@ async function fetchUser(accessToken: string): Promise<User | null> {
 }
 
 export default function GoogleAuthProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
+  const [status, setStatus] = useState<AuthContextValue["status"]>("signed-out");
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [error, setError] = useState<string | null>(
-    CLIENT_ID ? null : "NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set for this build.",
-  );
+  const [error, setError] = useState<string | null>(null);
 
   const tokenClient = useRef<TokenClient | null>(null);
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,22 +126,35 @@ export default function GoogleAuthProvider({ children }: { children: React.React
       if (expiryTimer.current) clearTimeout(expiryTimer.current);
       expiryTimer.current = setTimeout(clearSession, Math.max(0, expiresAt - Date.now()));
 
-      setUser(await fetchUser(token));
+      if (navigator.onLine) setUser(await fetchUser(token));
     },
     [clearSession],
   );
 
+  // Restoring a token needs no network and no Google script — just storage.
   useEffect(() => {
+    const stored = readStoredToken();
+    if (stored) void applyToken(stored.accessToken, stored.expiresAt);
+    return () => {
+      if (expiryTimer.current) clearTimeout(expiryTimer.current);
+    };
+  }, [applyToken]);
+
+  const signIn = useCallback(() => {
+    setError(null);
+
     if (!CLIENT_ID) {
-      setStatus("signed-out");
+      setError("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set for this build.");
+      return;
+    }
+    if (tokenClient.current) {
+      tokenClient.current.requestAccessToken();
       return;
     }
 
-    let cancelled = false;
-
     loadGis()
       .then(() => {
-        if (cancelled || !window.google) return;
+        if (!window.google) throw new Error("Google sign-in is unavailable.");
 
         tokenClient.current = window.google.accounts.oauth2.initTokenClient({
           client_id: CLIENT_ID,
@@ -144,46 +164,25 @@ export default function GoogleAuthProvider({ children }: { children: React.React
           callback: (response: TokenResponse) => {
             if (response.error) {
               setError(response.error_description ?? "Google sign-in was cancelled.");
-              setStatus("signed-out");
               return;
             }
             if (!window.google?.accounts.oauth2.hasGrantedAllScopes(response, DRIVE_SCOPE)) {
-              setError("Drive access is required to browse your files.");
-              setStatus("signed-out");
+              setError("Drive access is required to sync.");
               return;
             }
-            applyToken(response.access_token, Date.now() + response.expires_in * 1000);
+            void applyToken(response.access_token, Date.now() + response.expires_in * 1000);
           },
-          error_callback: (err) => {
-            setError(err.message ?? "Google sign-in failed.");
-            setStatus("signed-out");
-          },
+          error_callback: (err) => setError(err.message ?? "Google sign-in failed."),
         });
 
-        const stored = readStoredToken();
-        if (stored) applyToken(stored.accessToken, stored.expiresAt);
-        else setStatus("signed-out");
+        tokenClient.current.requestAccessToken();
       })
-      .catch((err: Error) => {
-        if (cancelled) return;
-        setError(err.message);
-        setStatus("signed-out");
-      });
-
-    return () => {
-      cancelled = true;
-      if (expiryTimer.current) clearTimeout(expiryTimer.current);
-    };
+      .catch((err: Error) => setError(err.message));
   }, [applyToken]);
-
-  const signIn = useCallback(() => {
-    setError(null);
-    tokenClient.current?.requestAccessToken();
-  }, []);
 
   const invalidate = useCallback(() => {
     clearSession();
-    setError("Your Google session expired. Please sign in again.");
+    setError("Your Google session expired. Sign in again to resume syncing.");
   }, [clearSession]);
 
   return (

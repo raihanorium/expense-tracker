@@ -33,8 +33,11 @@ jobs:
         env:
           # Served from https://raihanorium.github.io/expense-tracker/
           NEXT_PUBLIC_BASE_PATH: /expense-tracker
-          # Public by design — an OAuth client ID is not a secret.
+          # Public by design — these all ship in the bundle, so `vars` rather
+          # than `secrets`: masking them would only make build logs unreadable.
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+          NEXT_PUBLIC_GOOGLE_API_KEY: ${{ vars.NEXT_PUBLIC_GOOGLE_API_KEY }}
+          NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER: ${{ vars.NEXT_PUBLIC_GOOGLE_PROJECT_NUMBER }}
         run: npm run build
 
       - uses: actions/configure-pages@v5

@@ -1,37 +1,43 @@
 "use client";
 
-import DriveBrowser from "@/components/DriveBrowser";
-import GoogleSignInButton from "@/components/GoogleSignInButton";
-import { useGoogleAuth } from "@/components/GoogleAuthProvider";
+import BackupPanel from "@/components/BackupPanel";
+import DataProvider, { useData } from "@/components/DataProvider";
+import ExpenseForm from "@/components/ExpenseForm";
+import ExpenseList from "@/components/ExpenseList";
 
-export default function Home() {
-  const { status, error } = useGoogleAuth();
+function Tracker() {
+  const { ready } = useData();
 
-  if (status === "signed-in") {
+  if (!ready) {
     return (
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 py-10">
-        <DriveBrowser />
-      </main>
+      <p className="flex flex-1 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+        Loading…
+      </p>
     );
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Drive Browser</h1>
-        <p className="max-w-sm text-zinc-600 dark:text-zinc-400">
-          Sign in with Google to browse your Drive files. Read-only access — nothing is ever
-          modified.
+    <div className="flex flex-1 flex-col gap-6">
+      <header>
+        <h1 className="text-xl font-semibold tracking-tight">Expense Tracker</h1>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          Saved on this device. Back up to a file or Google Drive whenever you like.
         </p>
-      </div>
+      </header>
 
-      <GoogleSignInButton />
+      <ExpenseForm />
+      <ExpenseList />
+      <BackupPanel />
+    </div>
+  );
+}
 
-      {error && (
-        <p className="max-w-sm text-sm text-red-600 dark:text-red-400" role="alert">
-          {error}
-        </p>
-      )}
+export default function Home() {
+  return (
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">
+      <DataProvider>
+        <Tracker />
+      </DataProvider>
     </main>
   );
 }

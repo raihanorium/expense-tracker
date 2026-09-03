@@ -18,7 +18,12 @@ export type TokenClient = {
 
 declare global {
   interface Window {
+    /** The gapi loader, used only to pull in the Picker module. */
+    gapi?: {
+      load: (name: string, config: { callback: () => void; onerror?: () => void }) => void;
+    };
     google?: {
+      picker: typeof google.picker;
       accounts: {
         oauth2: {
           initTokenClient: (config: {

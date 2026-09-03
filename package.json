@@ -7,17 +7,19 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "build": "next build && node scripts/generate-sw.mjs",
+    "lint": "next lint",
+    "preview": "npm run build && node scripts/preview.mjs"
   },
   "dependencies": {
     "geist": "^1.7.2",
+    "idb": "^8.0.3",
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/google.picker": "^0.0.52",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
